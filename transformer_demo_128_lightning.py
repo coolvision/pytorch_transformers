@@ -1,3 +1,5 @@
+import sys
+import argparse
 import io
 import math
 import torch
@@ -15,8 +17,19 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
 
-import matplotlib.pyplot as plt
-
+def parse_args():
+	parser = argparse.ArgumentParser("data generation tool")
+	parser.add_argument('--learning_rate', type=float, default=1e-4)
+	parser.add_argument('--batch_size', type=int, default=32)
+	parser.add_argument('--nhead', type=int, default=8)
+	parser.add_argument('--num_encoder_layers', type=int, default=6)
+	parser.add_argument('--num_decoder_layers', type=int, default=6)
+	parser.add_argument('--dim_feedforward', type=int, default=2048)
+	args = parser.parse_args(sys.argv[1:])
+	if len(sys.argv) < 1:
+		parser.print_help()
+	return args
+	
 class ReverseStringsDataset(Dataset):
 	def __init__(self, data):
 		super(self.__class__, self).__init__()
@@ -66,12 +79,18 @@ def sequential_transforms(*transforms):
 	return func
 
 class Seq2SeqTransformer(pl.LightningModule):
-	def __init__(self, learning_rate = 1e-4):
+	def __init__(self, batch_size = 32, 
+						dim_feedforward = 2048, 
+						learning_rate = 1e-4,
+						nhead = 8,
+						num_decoder_layers = 6,
+						num_encoder_layers = 6):
+		
 		super().__init__()
 		self.learning_rate = learning_rate
 
-		train_data_file = './data/rev_train_16.csv'
-		val_data_file = './data/rev_val_16.csv'
+		train_data_file = './data/rev_train_128.csv'
+		val_data_file = './data/rev_val_128.csv'
 
 		self.training_data = ReverseStringsDataset(pd.read_csv(train_data_file, header=None, sep=';'))
 		self.val_data = ReverseStringsDataset(pd.read_csv(val_data_file, header=None, sep=';'))
@@ -85,16 +104,28 @@ class Seq2SeqTransformer(pl.LightningModule):
 		print("vocabulary", len(self.vocabulary), self.vocabulary.get_stoi())
 
 		self.emb_size = 16
-		self.batch_size = 32
+		self.batch_size = batch_size
 		self.tgt_vocab_size = len(self.vocabulary)
 		self.transforms = sequential_transforms(lambda x: x.split(), vocab_func(self.vocabulary), self.totensor(torch.long))
-		self.transformer = nn.Transformer(d_model=self.emb_size)
+		self.transformer = nn.Transformer(d_model=self.emb_size, 
+										dim_feedforward = dim_feedforward, 
+										nhead = nhead,
+										num_decoder_layers = num_decoder_layers,
+										num_encoder_layers = num_encoder_layers)
 		self.generator = nn.Linear(self.emb_size, self.tgt_vocab_size)
 		self.positional_encoding = PositionalEncoding(self.emb_size)
 
 		for p in self.transformer.parameters():
 			if p.dim() > 1:
 				nn.init.xavier_uniform_(p)
+				
+		print("Seq2SeqTransformer")
+		print("learning_rate", self.learning_rate)
+		print("batch_size", self.batch_size)
+		print("dim_feedforward", dim_feedforward)
+		print("nhead", nhead)
+		print("num_decoder_layers", num_decoder_layers)
+		print("num_encoder_layers", num_encoder_layers)
 
 	def collate_fn(self, batch):
 		input_batch, output_batch = [], []
@@ -121,6 +152,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 		return val_dataloader
 
 	def configure_optimizers(self):
+		# optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9)
 		optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 		return {
 			"optimizer": optimizer,
@@ -221,26 +253,36 @@ class Seq2SeqTransformer(pl.LightningModule):
 
 		self.log("val_loss", loss)
 
-	def on_epoch_end(self):
+	# def on_epoch_end(self):
+	# 
+	# 	total = 0
+	# 	correct = 0
+	# 	for i in range(0, len(self.val_data)):
+	# 		input = self.val_data[i][0]
+	# 		output = self.val_data[i][1]
+	# 		prediction = self.translate(self, input)
+	# 		total += 1
+	# 		if output == prediction:
+	# 			correct += 1
+	# 		if i > 20:
+	# 			break
+	# 
+	# 	accuracy = correct / total
+	# 	self.log("accuracy", accuracy, prog_bar=True)
 
-		total = 0
-		correct = 0
-		for i in range(0, len(self.val_data)):
-			input = self.val_data[i][0]
-			output = self.val_data[i][1]
-			prediction = self.translate(self, input)
-			total += 1
-			if output == prediction:
-				correct += 1
-			if i > 100:
-				break
+if __name__ == "__main__":
 
-		accuracy = correct / total
-		self.log("accuracy", accuracy, prog_bar=True)
+	args = parse_args()
+	print("args", args)
 
-logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
-model = Seq2SeqTransformer()
-
-lr_monitor = LearningRateMonitor(logging_interval='step')
-trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=100, callbacks=[lr_monitor])
-trainer.fit(model)
+	logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
+	model = Seq2SeqTransformer(batch_size = args.batch_size, 
+							dim_feedforward = args.dim_feedforward, 
+							learning_rate = args.learning_rate,
+							nhead = args.nhead,
+							num_decoder_layers = args.num_decoder_layers,
+							num_encoder_layers = args.num_encoder_layers)
+	
+	lr_monitor = LearningRateMonitor(logging_interval='step')
+	trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=500, callbacks=[lr_monitor])
+	trainer.fit(model)
