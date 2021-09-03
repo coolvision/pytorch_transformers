@@ -2,6 +2,7 @@ import sys
 import argparse
 import io
 import math
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,7 +10,9 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchtext.vocab import build_vocab_from_iterator
 from torch.nn.utils.rnn import pad_sequence
+
 import pandas as pd
+import numpy as np
 
 from torch.optim.lr_scheduler import MultiStepLR
 import pytorch_lightning as pl
@@ -19,7 +22,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 
 def parse_args():
 	parser = argparse.ArgumentParser("data generation tool")
-	parser.add_argument('--learning_rate', type=float, default=1e-4)
+	parser.add_argument('--learning_rate', type=float, default=0.0001)
 	parser.add_argument('--batch_size', type=int, default=32)
 	parser.add_argument('--nhead', type=int, default=8)
 	parser.add_argument('--num_encoder_layers', type=int, default=6)
@@ -81,7 +84,7 @@ def sequential_transforms(*transforms):
 class Seq2SeqTransformer(pl.LightningModule):
 	def __init__(self, batch_size = 32, 
 						dim_feedforward = 2048, 
-						learning_rate = 1e-4,
+						learning_rate = 0.0001,
 						nhead = 8,
 						num_decoder_layers = 6,
 						num_encoder_layers = 6):
@@ -152,12 +155,11 @@ class Seq2SeqTransformer(pl.LightningModule):
 		return val_dataloader
 
 	def configure_optimizers(self):
-		# optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate, betas=(0.9, 0.98), eps=1e-9)
 		optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
 		return {
 			"optimizer": optimizer,
 			"lr_scheduler": {
-				"scheduler": MultiStepLR(optimizer, milestones=[50, 60, 70], gamma=0.1),
+				"scheduler": MultiStepLR(optimizer, milestones=[300, 400, 500], gamma=0.1),
 				"name": "learning_rate_log",
 			},
 		}
@@ -228,7 +230,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 	def decode(self, tgt: Tensor, memory: Tensor, tgt_mask: Tensor):
 		return self.transformer.decoder(self.positional_encoding(tgt), memory, tgt_mask)
 
-	def training_step(self, batch, batch_nb):
+	def training_step(self, batch, batch_idx):
 		src, tgt = batch
 
 		tgt_input = tgt[:-1, :]
@@ -239,6 +241,9 @@ class Seq2SeqTransformer(pl.LightningModule):
 		loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1), ignore_index=self.pad_idx)
 
 		self.log("train_loss", loss)
+		
+		print("ts", batch_idx, loss)
+		
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -274,6 +279,10 @@ if __name__ == "__main__":
 
 	args = parse_args()
 	print("args", args)
+	
+	torch.manual_seed(0)
+	random.seed(0)
+	np.random.seed(0)
 
 	logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
 	model = Seq2SeqTransformer(batch_size = args.batch_size, 
