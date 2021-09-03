@@ -11,6 +11,11 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torchtext.vocab import build_vocab_from_iterator
 from torch.nn.utils.rnn import pad_sequence
 
+# print("nn.__file__", nn.__file__)
+torch.backends.cudnn.deterministic = True
+torch.set_printoptions(profile="full")
+# torch.set_printoptions(linewidth=200)
+
 import pandas as pd
 import numpy as np
 
@@ -89,7 +94,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 						num_decoder_layers = 6,
 						num_encoder_layers = 6):
 		
-		super().__init__()
+		super(Seq2SeqTransformer, self).__init__()
 		self.learning_rate = learning_rate
 
 		train_data_file = './data/rev_train_128.csv'
@@ -100,6 +105,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 		self.vocabulary = build_vocab_from_iterator(yield_tokens(self.training_data),
 													specials=['<unk>', '<pad>', '<start>', '<eos>'],
 													special_first=True)
+		self.training_data = ReverseStringsDataset(pd.read_csv(train_data_file, header=None, sep=';'))
 		self.start_idx = self.vocabulary['<start>']
 		self.eos_idx = self.vocabulary['<eos>']
 		self.pad_idx = self.vocabulary['<pad>']
@@ -108,6 +114,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 
 		self.emb_size = 16
 		self.batch_size = batch_size
+		# self.batch_size = 4
 		self.tgt_vocab_size = len(self.vocabulary)
 		self.transforms = sequential_transforms(lambda x: x.split(), vocab_func(self.vocabulary), self.totensor(torch.long))
 		self.transformer = nn.Transformer(d_model=self.emb_size, 
@@ -118,10 +125,6 @@ class Seq2SeqTransformer(pl.LightningModule):
 		self.generator = nn.Linear(self.emb_size, self.tgt_vocab_size)
 		self.positional_encoding = PositionalEncoding(self.emb_size)
 
-		for p in self.transformer.parameters():
-			if p.dim() > 1:
-				nn.init.xavier_uniform_(p)
-				
 		print("Seq2SeqTransformer")
 		print("learning_rate", self.learning_rate)
 		print("batch_size", self.batch_size)
@@ -239,10 +242,11 @@ class Seq2SeqTransformer(pl.LightningModule):
 
 		tgt_out = tgt[1:, :]
 		loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1), ignore_index=self.pad_idx)
-
+		
 		self.log("train_loss", loss)
 		
-		print("ts", batch_idx, loss)
+		# if batch_idx % 10 == 0:
+		# 	print((f"{batch_idx} loss: {loss.item():.10f}"))
 		
 		return loss
 
@@ -257,6 +261,34 @@ class Seq2SeqTransformer(pl.LightningModule):
 		loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1), ignore_index=self.pad_idx)
 
 		self.log("val_loss", loss)
+
+	def training_epoch_end(self, training_step_outputs):
+		losses = 0
+		for pred in training_step_outputs:
+			losses += pred['loss'].item()
+		losses /= len(training_step_outputs)
+		print((f"epoch loss: {losses:.10f}"))
+
+	# learning rate warm-up
+	def optimizer_step(
+		self,
+		epoch,
+		batch_idx,
+		optimizer,
+		optimizer_idx,
+		optimizer_closure,
+		on_tpu=False,
+		using_native_amp=False,
+		using_lbfgs=False,
+	):
+		# skip the first 500 steps
+		if self.trainer.global_step < 1000:
+			lr_scale = min(1.0, float(self.trainer.global_step + 1) / 1000.0)
+			for pg in optimizer.param_groups:
+				pg["lr"] = lr_scale * self.hparams.learning_rate
+
+		# update params
+		optimizer.step(closure=optimizer_closure)
 
 	# def on_epoch_end(self):
 	# 
@@ -280,18 +312,23 @@ if __name__ == "__main__":
 	args = parse_args()
 	print("args", args)
 	
+	logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
+	
 	torch.manual_seed(0)
 	random.seed(0)
-	np.random.seed(0)
-
-	logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
+	np.random.seed(0)	
+	
 	model = Seq2SeqTransformer(batch_size = args.batch_size, 
 							dim_feedforward = args.dim_feedforward, 
 							learning_rate = args.learning_rate,
 							nhead = args.nhead,
 							num_decoder_layers = args.num_decoder_layers,
 							num_encoder_layers = args.num_encoder_layers)
-	
+							
+	for p in model.parameters():
+		if p.dim() > 1:
+			nn.init.xavier_uniform_(p)
+
 	lr_monitor = LearningRateMonitor(logging_interval='step')
 	trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=500, callbacks=[lr_monitor])
 	trainer.fit(model)
