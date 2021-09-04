@@ -270,42 +270,42 @@ class Seq2SeqTransformer(pl.LightningModule):
 		print((f"epoch loss: {losses:.10f}"))
 
 	# learning rate warm-up
-	def optimizer_step(
-		self,
-		epoch,
-		batch_idx,
-		optimizer,
-		optimizer_idx,
-		optimizer_closure,
-		on_tpu=False,
-		using_native_amp=False,
-		using_lbfgs=False,
-	):
-		# skip the first 500 steps
-		if self.trainer.global_step < 1000:
-			lr_scale = min(1.0, float(self.trainer.global_step + 1) / 1000.0)
-			for pg in optimizer.param_groups:
-				pg["lr"] = lr_scale * self.hparams.learning_rate
-
-		# update params
-		optimizer.step(closure=optimizer_closure)
-
-	# def on_epoch_end(self):
+	# def optimizer_step(
+	# 	self,
+	# 	epoch,
+	# 	batch_idx,
+	# 	optimizer,
+	# 	optimizer_idx,
+	# 	optimizer_closure,
+	# 	on_tpu=False,
+	# 	using_native_amp=False,
+	# 	using_lbfgs=False,
+	# ):
+	# 	# skip the first 500 steps
+	# 	if self.trainer.global_step < 500:
+	# 		lr_scale = min(1.0, float(self.trainer.global_step + 1) / 500.0)
+	# 		for pg in optimizer.param_groups:
+	# 			pg["lr"] = lr_scale * self.learning_rate
 	# 
-	# 	total = 0
-	# 	correct = 0
-	# 	for i in range(0, len(self.val_data)):
-	# 		input = self.val_data[i][0]
-	# 		output = self.val_data[i][1]
-	# 		prediction = self.translate(self, input)
-	# 		total += 1
-	# 		if output == prediction:
-	# 			correct += 1
-	# 		if i > 20:
-	# 			break
-	# 
-	# 	accuracy = correct / total
-	# 	self.log("accuracy", accuracy, prog_bar=True)
+	# 	# update params
+	# 	optimizer.step(closure=optimizer_closure)
+
+	def on_epoch_end(self):
+	
+		total = 0
+		correct = 0
+		for i in range(0, len(self.val_data)):
+			input = self.val_data[i][0]
+			output = self.val_data[i][1]
+			prediction = self.translate(self, input)
+			total += 1
+			if output == prediction:
+				correct += 1
+			if i > 10:
+				break
+	
+		accuracy = correct / total
+		self.log("accuracy", accuracy, prog_bar=True)
 
 if __name__ == "__main__":
 
