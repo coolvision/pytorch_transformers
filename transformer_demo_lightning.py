@@ -11,10 +11,8 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from torchtext.vocab import build_vocab_from_iterator
 from torch.nn.utils.rnn import pad_sequence
 
-# print("nn.__file__", nn.__file__)
 torch.backends.cudnn.deterministic = True
 torch.set_printoptions(profile="full")
-# torch.set_printoptions(linewidth=200)
 
 import pandas as pd
 import numpy as np
@@ -97,8 +95,8 @@ class Seq2SeqTransformer(pl.LightningModule):
 		super(Seq2SeqTransformer, self).__init__()
 		self.learning_rate = learning_rate
 
-		train_data_file = './data/rev_train_128.csv'
-		val_data_file = './data/rev_val_128.csv'
+		train_data_file = './data/rev_train_256.csv'
+		val_data_file = './data/rev_val_256.csv'
 
 		self.training_data = ReverseStringsDataset(pd.read_csv(train_data_file, header=None, sep=';'))
 		self.val_data = ReverseStringsDataset(pd.read_csv(val_data_file, header=None, sep=';'))
@@ -244,10 +242,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 		loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1), ignore_index=self.pad_idx)
 		
 		self.log("train_loss", loss)
-		
-		# if batch_idx % 10 == 0:
-		# 	print((f"{batch_idx} loss: {loss.item():.10f}"))
-		
+
 		return loss
 
 	def validation_step(self, batch, batch_idx):
