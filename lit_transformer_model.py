@@ -1,6 +1,4 @@
 import sys
-import argparse
-import io
 import math
 import random
 import torch
@@ -10,32 +8,13 @@ from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchtext.vocab import build_vocab_from_iterator
 from torch.nn.utils.rnn import pad_sequence
+from torch.optim.lr_scheduler import MultiStepLR
 
-torch.backends.cudnn.deterministic = True
-torch.set_printoptions(profile="full")
+import pytorch_lightning as pl
 
 import pandas as pd
 import numpy as np
 
-from torch.optim.lr_scheduler import MultiStepLR
-import pytorch_lightning as pl
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks import LearningRateMonitor
-
-def parse_args():
-	parser = argparse.ArgumentParser("data generation tool")
-	parser.add_argument('--learning_rate', type=float, default=0.0001)
-	parser.add_argument('--batch_size', type=int, default=32)
-	parser.add_argument('--nhead', type=int, default=8)
-	parser.add_argument('--num_encoder_layers', type=int, default=6)
-	parser.add_argument('--num_decoder_layers', type=int, default=6)
-	parser.add_argument('--dim_feedforward', type=int, default=2048)
-	args = parser.parse_args(sys.argv[1:])
-	if len(sys.argv) < 1:
-		parser.print_help()
-	return args
-	
 class ReverseStringsDataset(Dataset):
 	def __init__(self, data):
 		super(self.__class__, self).__init__()
@@ -250,7 +229,7 @@ class Seq2SeqTransformer(pl.LightningModule):
 
 		tgt_input = tgt[:-1, :]
 		src_mask, tgt_mask, src_padding_mask, tgt_padding_mask = self.create_mask(src, tgt_input)
-		logits = model(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
+		logits = self.forward(src, tgt_input, src_mask, tgt_mask,src_padding_mask, tgt_padding_mask, src_padding_mask)
 
 		tgt_out = tgt[1:, :]
 		loss = F.cross_entropy(logits.reshape(-1, logits.shape[-1]), tgt_out.reshape(-1), ignore_index=self.pad_idx)
@@ -301,29 +280,3 @@ class Seq2SeqTransformer(pl.LightningModule):
 	
 		accuracy = correct / total
 		self.log("accuracy", accuracy, prog_bar=True)
-
-if __name__ == "__main__":
-
-	args = parse_args()
-	print("args", args)
-	
-	logger = TensorBoardLogger("~/pytorch_logs", name="Seq2SeqTransformer")
-	
-	torch.manual_seed(0)
-	random.seed(0)
-	np.random.seed(0)	
-	
-	model = Seq2SeqTransformer(batch_size = args.batch_size, 
-							dim_feedforward = args.dim_feedforward, 
-							learning_rate = args.learning_rate,
-							nhead = args.nhead,
-							num_decoder_layers = args.num_decoder_layers,
-							num_encoder_layers = args.num_encoder_layers)
-							
-	for p in model.parameters():
-		if p.dim() > 1:
-			nn.init.xavier_uniform_(p)
-
-	lr_monitor = LearningRateMonitor(logging_interval='step')
-	trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=500, callbacks=[lr_monitor])
-	trainer.fit(model)
