@@ -184,7 +184,9 @@ class Seq2SeqTransformer(pl.LightningModule):
 			memory = memory.to(self.device)
 			tgt_mask = (self.generate_square_subsequent_mask(ys.size(0))
 						.type(torch.bool)).to(self.device)
-			out, w1, w2 = self.decode(ys, memory, tgt_mask)
+			#out, w1, w2 = self.decode(ys, memory, tgt_mask)
+			out = self.decode(ys, memory, tgt_mask)
+			
 			
 			out = out.transpose(0, 1)
 			prob = self.generator(out[:, -1])
@@ -198,18 +200,23 @@ class Seq2SeqTransformer(pl.LightningModule):
 				
 		# print(w2)
 		
-		print(len(w2))
-		print(w2[0].shape)
+		#print(len(w2))
+		#print(w2[0].shape)
 		
-		return ys, w2[0].detach().numpy()
+		return ys
+		#, w2[0].detach().numpy()
 
 	def translate(self, src_sentence: str):
 		self.eval()
 		src = self.transforms(src_sentence).view(-1, 1)
 		num_tokens = src.shape[0]
 		src_mask = (torch.zeros(num_tokens, num_tokens)).type(torch.bool)
-		tgt_tokens, w = self.greedy_decode(src, src_mask, max_len=num_tokens + 5, start_symbol=self.start_idx)
-		return " ".join(self.vocabulary.lookup_tokens(list(tgt_tokens.flatten().cpu().numpy()))).replace("<start>", "").replace("<eos>", "").strip(), w
+		#tgt_tokens, w = self.greedy_decode(src, src_mask, max_len=num_tokens + 5, start_symbol=self.start_idx)
+		#return " ".join(self.vocabulary.lookup_tokens(list(tgt_tokens.flatten().cpu().numpy()))).replace("<start>", "").replace("<eos>", "").strip(), w
+
+		tgt_tokens = self.greedy_decode(src, src_mask, max_len=num_tokens + 5, start_symbol=self.start_idx)
+		return " ".join(self.vocabulary.lookup_tokens(list(tgt_tokens.flatten().cpu().numpy()))).replace("<start>", "").replace("<eos>", "").strip()
+
 
 	def encode(self, src: Tensor, src_mask: Tensor):
 		return self.transformer.encoder(self.positional_encoding(src), src_mask)

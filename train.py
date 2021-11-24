@@ -49,5 +49,5 @@ if __name__ == "__main__":
 			torch.nn.init.xavier_uniform_(p)
 
 	lr_monitor = LearningRateMonitor(logging_interval='step')
-	trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=500, callbacks=[lr_monitor])
+	trainer = pl.Trainer(gpus=1, logger=logger, max_epochs=50, callbacks=[lr_monitor])
 	trainer.fit(model)
